@@ -31,7 +31,7 @@ use util::{self, dylib_path, dylib_path_var};
 use compile;
 use native;
 use builder::{Kind, Builder, Compiler, Step};
-use tool::Tool;
+use tool::{self, Tool};
 
 const ADB_TEST_DIR: &str = "/data/tmp/work";
 
@@ -149,6 +149,17 @@ pub struct Cargotest<'a> {
 impl<'a> Step<'a> for Cargotest<'a> {
     type Output = ();
     const ONLY_HOSTS: bool = true;
+
+    fn should_run(_builder: &Builder, path: &Path) -> bool {
+        path.ends_with("src/tools/cargotest")
+    }
+
+    fn make_run(builder: &Builder, _path: Option<&Path>, host: &str, _target: &str) {
+        builder.ensure(Cargotest {
+            stage: builder.top_stage,
+            host: host,
+        });
+    }
 
     /// Runs the `cargotest` tool as compiled in `stage` by the `host` compiler.
     ///
@@ -734,6 +745,9 @@ impl<'a> Step<'a> for Docs<'a> {
     fn run(self, builder: &Builder) {
         let build = builder.build;
         let compiler = self.compiler;
+
+        builder.ensure(compile::Test { compiler, target: compiler.host });
+
         // Do a breadth-first traversal of the `src/doc` directory and just run
         // tests for all files that end in `*.md`
         let mut stack = vec![build.src.join("src/doc")];
@@ -1054,6 +1068,7 @@ impl<'a> Step<'a> for Krate<'a> {
                 ("libtest", "src/libtest", String::new(), "test")
             }
             Mode::Librustc => {
+                builder.ensure(compile::Rustc { compiler, target });
                 ("librustc", "src/rustc", build.rustc_features(), "rustc-main")
             }
             _ => panic!("can only test libraries"),
@@ -1209,16 +1224,6 @@ fn find_tests(dir: &Path, target: &str) -> Vec<PathBuf> {
     dst
 }
 
-//    // Some test suites are run inside emulators or on remote devices, and most
-//    // of our test binaries are linked dynamically which means we need to ship
-//    // the standard library and such to the emulator ahead of time. This step
-//    // represents this and is a dependency of all test suites.
-//    //
-//    // Most of the time this step is a noop (the `check::emulator_copy_libs`
-//    // only does work if necessary). For some steps such as shipping data to
-//    // QEMU we have to build our own tools so we've got conditional dependencies
-//    // on those programs as well. Note that the remote test client is built for
-//    // the build target (us) and the server is built for the target.
 //    rules.test("remote-copy-libs", "path/to/nowhere")
 //         .dep(|s| s.name("libtest"))
 //         .dep(move |s| {
@@ -1238,6 +1243,15 @@ fn find_tests(dir: &Path, target: &str) -> Vec<PathBuf> {
 //         .run(move |s| check::remote_copy_libs(build, &s.compiler(), s.target));
 //
 
+/// Some test suites are run inside emulators or on remote devices, and most
+/// of our test binaries are linked dynamically which means we need to ship
+/// the standard library and such to the emulator ahead of time. This step
+/// represents this and is a dependency of all test suites.
+///
+/// Most of the time this is a noop. For some steps such as shipping data to
+/// QEMU we have to build our own tools so we've got conditional dependencies
+/// on those programs as well. Note that the remote test client is built for
+/// the build target (us) and the server is built for the target.
 #[derive(Serialize)]
 pub struct RemoteCopyLibs<'a> {
     compiler: Compiler<'a>,
@@ -1260,9 +1274,7 @@ impl<'a> Step<'a> for RemoteCopyLibs<'a> {
         println!("REMOTE copy libs to emulator ({})", target);
         t!(fs::create_dir_all(build.out.join("tmp")));
 
-        // FIXME: This builds the tool for the native build triple
-        // (build.build); that is probably wrong. Should build for target.
-        let server = builder.tool_exe(Tool::RemoteTestServer);
+        let server = builder.ensure(tool::RemoteTestServer { compiler, target }));
 
         // Spawn the emulator and wait for it to come online
         let tool = builder.tool_exe(Tool::RemoteTestClient);
@@ -1304,6 +1316,9 @@ impl<'a> Step<'a> for Distcheck {
     fn run(self, builder: &Builder) {
         let build = builder.build;
 
+        builder.ensure(dist::PlainSourceTarball);
+        builder.ensure(dist::Src);
+
         if build.build != "x86_64-unknown-linux-gnu" {
             return
         }
@@ -1313,9 +1328,6 @@ impl<'a> Step<'a> for Distcheck {
         if !build.config.target.iter().any(|s| s == "x86_64-unknown-linux-gnu") {
             return
         }
-
-        builder.ensure(dist::PlainSourceTarball);
-        builder.ensure(dist::Src);
 
         println!("Distcheck");
         let dir = build.out.join("tmp").join("distcheck");
