@@ -550,7 +550,7 @@ impl<'a> Step<'a> for Compiletest<'a> {
 
             builder.ensure(dist::DebuggerScripts {
                 sysroot: &builder.sysroot(compiler),
-                host: compiler.host
+                target: target
             });
 
             if mode == "debuginfo-gdb" {
@@ -1274,7 +1274,7 @@ impl<'a> Step<'a> for RemoteCopyLibs<'a> {
         println!("REMOTE copy libs to emulator ({})", target);
         t!(fs::create_dir_all(build.out.join("tmp")));
 
-        let server = builder.ensure(tool::RemoteTestServer { compiler, target }));
+        let server = builder.ensure(tool::RemoteTestServer { stage: compiler.stage, target });
 
         // Spawn the emulator and wait for it to come online
         let tool = builder.tool_exe(Tool::RemoteTestClient);
@@ -1316,9 +1316,6 @@ impl<'a> Step<'a> for Distcheck {
     fn run(self, builder: &Builder) {
         let build = builder.build;
 
-        builder.ensure(dist::PlainSourceTarball);
-        builder.ensure(dist::Src);
-
         if build.build != "x86_64-unknown-linux-gnu" {
             return
         }
@@ -1336,7 +1333,7 @@ impl<'a> Step<'a> for Distcheck {
 
         let mut cmd = Command::new("tar");
         cmd.arg("-xzf")
-           .arg(dist::rust_src_location(build))
+           .arg(builder.ensure(dist::PlainSourceTarball))
            .arg("--strip-components=1")
            .current_dir(&dir);
         build.run(&mut cmd);
@@ -1356,7 +1353,7 @@ impl<'a> Step<'a> for Distcheck {
 
         let mut cmd = Command::new("tar");
         cmd.arg("-xzf")
-           .arg(dist::rust_src_installer(build))
+           .arg(builder.ensure(dist::Src))
            .arg("--strip-components=1")
            .current_dir(&dir);
         build.run(&mut cmd);
