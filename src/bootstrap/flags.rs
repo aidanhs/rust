@@ -20,10 +20,6 @@ use std::process;
 
 use getopts::Options;
 
-use Build;
-use config::Config;
-use metadata;
-
 use cache::{Interned, INTERNER};
 
 /// Deserialized version of all flags for this compile.
@@ -69,7 +65,6 @@ pub enum Subcommand {
 
 impl Flags {
     pub fn parse(args: &[String]) -> Flags {
-        let mut extra_help = String::new();
         let mut subcommand_help = format!("\
 Usage: x.py <subcommand> [options] [<paths>...]
 
@@ -100,11 +95,8 @@ To learn more about a subcommand, run `./x.py <subcommand> -h`");
         opts.optflag("h", "help", "print this help message");
 
         // fn usage()
-        let usage = |exit_code: i32, opts: &Options, subcommand_help: &str, extra_help: &str| -> ! {
+        let usage = |exit_code: i32, opts: &Options, subcommand_help: &str| -> ! {
             println!("{}", opts.usage(subcommand_help));
-            if !extra_help.is_empty() {
-                println!("{}", extra_help);
-            }
             process::exit(exit_code);
         };
 
@@ -144,7 +136,7 @@ To learn more about a subcommand, run `./x.py <subcommand> -h`");
         let matches = opts.parse(&args[..]).unwrap_or_else(|e| {
             // Invalid argument/option format
             println!("\n{}\n", e);
-            usage(1, &opts, &subcommand_help, &extra_help);
+            usage(1, &opts, &subcommand_help);
         });
         // Extra sanity check to make sure we didn't hit this crazy corner case:
         //
@@ -240,27 +232,32 @@ Arguments:
             }
         });
 
-        // All subcommands can have an optional "Available paths" section
-        if matches.opt_present("verbose") {
-            let flags = Flags::parse(&["build".to_string()]);
-            let mut config = Config::parse(&flags.build, cfg_file.clone());
-            config.build = flags.build.clone();
-            let mut build = Build::new(flags, config);
-            metadata::build(&mut build);
+        // FIXME: The rustbuild rewrite does not make an available paths
+        // sections simple or easy to implement. I'm not sure how useful it is
+        // to have so perhaps we shouldn't attempt to reimplement it due to the
+        // difficulties imposed by such a move.
+        //
+        //// All subcommands can have an optional "Available paths" section
+        //if matches.opt_present("verbose") {
+        //    let flags = Flags::parse(&["build".to_string()]);
+        //    let mut config = Config::parse(&flags.build, cfg_file.clone());
+        //    config.build = flags.build.clone();
+        //    let mut build = Build::new(flags, config);
+        //    metadata::build(&mut build);
 
-            // FIXME: How should this happen now? Not super clear...
-            // let maybe_rules_help = step::build_rules(&build).get_help(subcommand);
-            // if maybe_rules_help.is_some() {
-            //     extra_help.push_str(maybe_rules_help.unwrap().as_str());
-            // }
-        } else {
-            extra_help.push_str(format!("Run `./x.py {} -h -v` to see a list of available paths.",
-                     subcommand).as_str());
-        }
+        //    // FIXME: How should this happen now? Not super clear...
+        //    // let maybe_rules_help = step::build_rules(&build).get_help(subcommand);
+        //    // if maybe_rules_help.is_some() {
+        //    //     extra_help.push_str(maybe_rules_help.unwrap().as_str());
+        //    // }
+        //} else {
+        //    extra_help.push_str(format!("Run `./x.py {} -h -v` to see a list of available paths.",
+        //             subcommand).as_str());
+        //}
 
         // User passed in -h/--help?
         if matches.opt_present("help") {
-            usage(0, &opts, &subcommand_help, &extra_help);
+            usage(0, &opts, &subcommand_help);
         }
 
         let cmd = match subcommand.as_str() {
@@ -286,7 +283,7 @@ Arguments:
             "clean" => {
                 if paths.len() > 0 {
                     println!("\nclean takes no arguments\n");
-                    usage(1, &opts, &subcommand_help, &extra_help);
+                    usage(1, &opts, &subcommand_help);
                 }
                 Subcommand::Clean
             }
@@ -301,7 +298,7 @@ Arguments:
                 }
             }
             _ => {
-                usage(1, &opts, &subcommand_help, &extra_help);
+                usage(1, &opts, &subcommand_help);
             }
         };
 
