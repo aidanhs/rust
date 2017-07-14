@@ -1308,6 +1308,10 @@ pub struct RemoteCopyLibs {
 impl Step for RemoteCopyLibs {
     type Output = ();
 
+    fn should_run(_builder: &Builder, _path: &Path) -> bool {
+        false
+    }
+
     fn run(self, builder: &Builder) {
         let build = builder.build;
         let compiler = self.compiler;
@@ -1358,6 +1362,10 @@ pub struct Distcheck;
 
 impl Step for Distcheck {
     type Output = ();
+
+    fn should_run(_builder: &Builder, path: &Path) -> bool {
+        path.ends_with("distcheck")
+    }
 
     /// Run "distcheck", a 'make check' from a tarball
     fn run(self, builder: &Builder) {
